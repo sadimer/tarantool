@@ -271,7 +271,11 @@ main(int argc, char **argv)
     merge_sort(argc - 1);
     for (int i = 0; i < argc - 1; i++) {
         free(arrs[i].a);
+        close(fd[i]);
+        free(stacks[i]);
     }
+    free(stacks);
+    free(uctx_funcs);
     free(arrs);
     return 0;
 }
