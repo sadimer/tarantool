@@ -8,6 +8,8 @@
 #include <signal.h>
 #include <sys/mman.h>
 #include <aio.h>
+#include <unistd.h>
+#include <string.h>
 #define stack_size 1024 * 1024
 
 static ucontext_t uctx_main;
@@ -138,6 +140,11 @@ main(int argc, char **argv)
     merge_sort(argc - 1);
     for (int i = 0; i < argc - 1; i++) {
         free(arrs[i].a);
+        close(fd[i]);
+        free(stacks[i]);
     }
+    free(stacks);
+    free(uctx_funcs);
+    free(arrs);
     return 0;
 }
