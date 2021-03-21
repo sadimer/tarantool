@@ -17,6 +17,11 @@
 static ucontext_t uctx_main;
 static ucontext_t *uctx_funcs;
 
+enum Constants {
+    SIGSTACK_SIZE = 100,
+    CALLOC_SIZE = 101,
+    BUF_SIZE = 21
+};
 
 //функция создания стека для корутины
 static void *
@@ -62,7 +67,7 @@ int sigs = 0;
 //число завершивших работу корутин
 int complited = 0;
 //стек пришедших сигналов о завершении чтения (обновляется каждые 100 сигналов)
-int stack_of_signals[100] = {0};
+int stack_of_signals[SIGSTACK_SIZE] = {0};
 //указатели для стека
 int num_of_signals = 0;
 int point_of_signals = 0;
@@ -77,7 +82,7 @@ checker(int sig)
     signal(SIGIO, checker);
     signals = 1;
     point_of_signals++;
-    point_of_signals %= 100;
+    point_of_signals %= SIGSTACK_SIZE;
 }
 
 //сортировка через корутины
@@ -86,14 +91,14 @@ read_and_sort(int fd, int index, int num_of_index) {
     signal(SIGIO, checker);
     printf("coroutine %d is working...\n", index);
     swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
-    arrs[index].a = calloc(101, sizeof(long long int));
+    arrs[index].a = calloc(CALLOC_SIZE, sizeof(long long int));
     swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
     int size;
     swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
     struct aiocb aiocb;
     swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
     //буфер для посимвольного чтения, в который помещается long long
-    char buf[21];
+    char buf[BUF_SIZE];
     swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
     memset(&aiocb, 0, sizeof(struct aiocb));
     swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
@@ -127,7 +132,7 @@ read_and_sort(int fd, int index, int num_of_index) {
         //чтение в буфер избыточного числа байт
         stack_of_signals[num_of_signals] = index;
         num_of_signals++;
-        num_of_signals %= 100;
+        num_of_signals %= SIGSTACK_SIZE;
         //сдвиг счетчика ожидания сигалов на 1
         //printf("need signal on %d courutine!\n", index);
         while (1) {
@@ -148,7 +153,7 @@ read_and_sort(int fd, int index, int num_of_index) {
         int len = 0;
         //вычисляем длину введенного числа
         swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
-        for (int i = 0; i < 21; i++) {
+        for (int i = 0; i < BUF_SIZE; i++) {
             if (buf[i] == ' ' || buf[i] == '\0' || buf[i] == '\n') {
                 break;
             }
@@ -177,8 +182,8 @@ read_and_sort(int fd, int index, int num_of_index) {
         //printf("index: %d size: %d\n", index, size);
         swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
         //расширяем массив введенных для каждой корутины
-        if (size % 100 == 0 && size != 0) {
-            arrs[index].a = realloc(arrs[index].a, (size + 101) * sizeof(long long int));
+        if (size % (CALLOC_SIZE - 1) == 0 && size != 0) {
+            arrs[index].a = realloc(arrs[index].a, (size + CALLOC_SIZE) * sizeof(long long int));
         }
         swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
     }
