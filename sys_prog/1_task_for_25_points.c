@@ -10,6 +10,7 @@
 #include <aio.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
 #define stack_size 1024 * 1024
 //принимаемые программой аргументы - имена файлов с хотябы одним числом в текстовом виде!
 //результат в файле "result.txt" - отсортированная последовательсноть чисел в текстовом виде
@@ -18,7 +19,7 @@ static ucontext_t uctx_main;
 static ucontext_t *uctx_funcs;
 
 enum Constants {
-    SIGSTACK_SIZE = 100,
+    LAST_SIGNAL_TIMEOUT = 2,
     CALLOC_SIZE = 101,
     BUF_SIZE = 21
 };
@@ -36,20 +37,43 @@ allocate_stack()
     return stack;
 }
 
-//для сортировки отдельных файлов используется сортировка Шелла
+//функция просеивания для пирамидальной сортировки
 void 
-shell_sort(long long int a[], int size)
+sift(long long int *a, int root, int bottom)
 {
-    int step;
-    long long int tmp;
-    for (step = size / 2; step > 0; step /= 2) {
-        for (int i = step; i < size; i++) {
-            for (int j = i - step; j >= 0 && a[j] > a[j + step]; j -= step) {
-                tmp = a[j];
-                a[j] = a[j + step];
-                a[j + step] = tmp;
-            }
+    int max_child;
+    int done = 0;
+    while ((root * 2 <= bottom) && (done != 1)) {
+        if (root * 2 == bottom) {
+            max_child = root * 2;
+        } else if (a[root * 2] > a[root * 2 + 1]) {
+            max_child = root * 2;
+        } else {
+            max_child = root * 2 + 1;
         }
+        if (a[root] < a[max_child]) {
+            int tmp = a[root];
+            a[root] = a[max_child];
+            a[max_child] = tmp;
+            root = max_child;
+        } else {
+            done = 1;
+        }
+    }
+}
+
+//для сортировки отдельных файлов используется пирамидальная сортировка
+void 
+heap_sort(long long int *a, int size) 
+{
+    for (int i = (size / 2); i >= 0; i--) {
+        sift(a, i, size - 1);
+    }
+    for (int i = size - 1; i >= 1; i--) {
+        int tmp = a[0];
+        a[0] = a[i];
+        a[i] = tmp;
+        sift(a, 0, i - 1);
     }
 }
 
@@ -62,17 +86,19 @@ struct arr {
 //массив таких структур
 struct arr *arrs;
 
-//для отладки
-int sigs = 0;
 //число завершивших работу корутин
 int complited = 0;
 //стек пришедших сигналов о завершении чтения (обновляется каждые 100 сигналов)
-int stack_of_signals[SIGSTACK_SIZE] = {0};
+int *stack_of_signals;
 //указатели для стека
 int num_of_signals = 0;
 int point_of_signals = 0;
 //флаг прихода нового сигнала
 int signals = 0;
+
+void yield(int index, int new_index) {
+    swapcontext(&uctx_funcs[index], &uctx_funcs[new_index]);
+}
 
 //функция-обработчик для SIGIO
 //сдвигает указатель пришедших сигналов на 1
@@ -81,8 +107,6 @@ checker(int sig)
 {
     signal(SIGIO, checker);
     signals = 1;
-    point_of_signals++;
-    point_of_signals %= SIGSTACK_SIZE;
 }
 
 //сортировка через корутины
@@ -90,114 +114,113 @@ static void
 read_and_sort(int fd, int index, int num_of_index) {
     signal(SIGIO, checker);
     printf("coroutine %d is working...\n", index);
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     arrs[index].a = calloc(CALLOC_SIZE, sizeof(long long int));
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     int size;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     struct aiocb aiocb;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     //буфер для посимвольного чтения, в который помещается long long
     char buf[BUF_SIZE];
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     memset(&aiocb, 0, sizeof(struct aiocb));
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     memset(buf, 0, sizeof(buf));
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     aiocb.aio_fildes = fd;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     aiocb.aio_sigevent.sigev_notify = SIGEV_SIGNAL;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     aiocb.aio_sigevent.sigev_signo = SIGIO;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     aiocb.aio_nbytes = sizeof(buf);
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     long long int offt = 0;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     long long int old_offt = 0;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     struct stat st;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     fstat(fd, &st);
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     //цикл считывания по одному числу до конца файла
     for (size = 0; offt < st.st_size;) {
-        //printf("offt: %lld index: %d offt_size: %ld\n", offt, index, st.st_size);
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+        yield(index, (index + 1) % num_of_index);
         aiocb.aio_buf = buf;
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+        yield(index, (index + 1) % num_of_index);
         aiocb.aio_offset = offt;
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+        yield(index, (index + 1) % num_of_index);
         aio_read(&aiocb);
+        time_t lt = time(NULL);
         //чтение в буфер избыточного числа байт
         stack_of_signals[num_of_signals] = index;
         num_of_signals++;
-        num_of_signals %= SIGSTACK_SIZE;
+        num_of_signals %= num_of_index;
         //сдвиг счетчика ожидания сигалов на 1
-        //printf("need signal on %d courutine!\n", index);
         while (1) {
-            if (signals == 1) {
+            //если пришел сигнал или истекло время ожидание сигнала
+            if (signals == 1 || ((time(NULL) - lt) > LAST_SIGNAL_TIMEOUT)) {
+                int save_index = stack_of_signals[point_of_signals];
+                stack_of_signals[point_of_signals] = -1;
+                point_of_signals++;
+                point_of_signals %= num_of_index;
                 //если пришел сигнал, то переключаем на ту корутину, которая этого сигнала ждала
                 //для этого используем стек ожидающих сигналов
-                swapcontext(&uctx_funcs[index], &uctx_funcs[stack_of_signals[point_of_signals]]);
-                //printf("signaled! (%d), (%d)\n", sigs, index);
-                sigs++;
+                yield(index, save_index);
+                signals = 0;
                 break;
             }
             //пока сигналов нет, переключаем корутины
-            swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+            yield(index, (index + 1) % num_of_index);
         }
-        signals = 0;
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
-        //printf("write in %d courutine!\n", index);
+        yield(index, (index + 1) % num_of_index);
         int len = 0;
         //вычисляем длину введенного числа
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+        yield(index, (index + 1) % num_of_index);
         for (int i = 0; i < BUF_SIZE; i++) {
-            if (buf[i] == ' ' || buf[i] == '\0' || buf[i] == '\n') {
+            if (buf[i] == ' ' || buf[i] == '\0' || buf[i] == '\n' || buf[i] == EOF) {
                 break;
             }
             len++;
         }
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+        yield(index, (index + 1) % num_of_index);
         //если она ненулевая, то данное число записывается в массив
         if (len > 0) {
             //поскольку чтение в буфер избыточное, устанавливаем указатель чтения в корректное место (чтобы не пропустить следующие числа)
             old_offt = old_offt + len + 1;
-            swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+            yield(index, (index + 1) % num_of_index);
             offt = old_offt;
-            swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
-            //printf("offt: %lld res: %lld strlen: %d index: %d\n", offt, strtoll(buf, NULL, 10), len, index);
-            swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+            yield(index, (index + 1) % num_of_index);
+            yield(index, (index + 1) % num_of_index);
             arrs[index].a[size] = strtoll(buf, NULL, 10);
-            swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+            yield(index, (index + 1) % num_of_index);
             //обнуляем буфер воизбежание ошибок
-            for (int i = 0; i < len; i++) {
+            for (int i = 0; i < BUF_SIZE; i++) {
                 buf[i] = 0;
             }
-            swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+            yield(index, (index + 1) % num_of_index);
             //сдвигаем переменную-итератор для массива в каждой корутине
             size++;
         }
-        //printf("index: %d size: %d\n", index, size);
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+        yield(index, (index + 1) % num_of_index);
         //расширяем массив введенных для каждой корутины
         if (size % (CALLOC_SIZE - 1) == 0 && size != 0) {
             arrs[index].a = realloc(arrs[index].a, (size + CALLOC_SIZE) * sizeof(long long int));
         }
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+        yield(index, (index + 1) % num_of_index);
     }
     arrs[index].size = size;
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    yield(index, (index + 1) % num_of_index);
     //сортировка
-    shell_sort(arrs[index].a, size);
-    swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+    heap_sort(arrs[index].a, size);
+    yield(index, (index + 1) % num_of_index);
     printf("coroutine %d stoped!\n", index);
     complited++;
     //при остановке корутины она автоматически переключается на следующую
     //до тех пор пока счетчик завершенных не покажет, что все завершились
     while (complited != num_of_index) {
-        swapcontext(&uctx_funcs[index], &uctx_funcs[(index + 1) % num_of_index]);
+        yield(index, (index + 1) % num_of_index);
     }
 }
 
@@ -250,6 +273,10 @@ merge_sort(int n) {
 int 
 main(int argc, char **argv) 
 {
+    stack_of_signals = calloc(argc - 1, sizeof(stack_of_signals));
+    for (int i = 0; i < argc - 1; i++) {
+        stack_of_signals[i] = -1;
+    }
     //массив файловых дескрипторов
     int fd[argc - 1];
     arrs = calloc(argc - 1, sizeof(struct arr));
