@@ -100,19 +100,20 @@ void yield(int index, int new_index) {
     swapcontext(&uctx_funcs[index], &uctx_funcs[new_index]);
 }
 
-//функция-обработчик для SIGIO
+//функция-обработчик для SIGRTMIN
 //сдвигает указатель пришедших сигналов на 1
 void
 checker(int sig)
 {
-    signal(SIGIO, checker);
+    signal(SIGRTMIN, checker);
     signals = 1;
 }
 
 //сортировка через корутины
 static void 
 read_and_sort(int fd, int index, int num_of_index) {
-    signal(SIGIO, checker);
+    signal(SIGRTMIN, checker);
+    yield(index, (index + 1) % num_of_index);
     printf("coroutine %d is working...\n", index);
     yield(index, (index + 1) % num_of_index);
     arrs[index].a = calloc(CALLOC_SIZE, sizeof(long long int));
@@ -132,7 +133,7 @@ read_and_sort(int fd, int index, int num_of_index) {
     yield(index, (index + 1) % num_of_index);
     aiocb.aio_sigevent.sigev_notify = SIGEV_SIGNAL;
     yield(index, (index + 1) % num_of_index);
-    aiocb.aio_sigevent.sigev_signo = SIGIO;
+    aiocb.aio_sigevent.sigev_signo = SIGRTMIN;
     yield(index, (index + 1) % num_of_index);
     aiocb.aio_nbytes = sizeof(buf);
     yield(index, (index + 1) % num_of_index);
@@ -157,6 +158,7 @@ read_and_sort(int fd, int index, int num_of_index) {
         stack_of_signals[num_of_signals] = index;
         num_of_signals++;
         num_of_signals %= num_of_index;
+        yield(index, (index + 1) % num_of_index);
         //сдвиг счетчика ожидания сигалов на 1
         while (1) {
             //если пришел сигнал или истекло время ожидание сигнала
@@ -191,7 +193,6 @@ read_and_sort(int fd, int index, int num_of_index) {
             old_offt = old_offt + len + 1;
             yield(index, (index + 1) % num_of_index);
             offt = old_offt;
-            yield(index, (index + 1) % num_of_index);
             yield(index, (index + 1) % num_of_index);
             arrs[index].a[size] = strtoll(buf, NULL, 10);
             yield(index, (index + 1) % num_of_index);
